@@ -1,0 +1,148 @@
+-- Homework 3
+-- 1- Create the database schema.
+
+DROP DATABASE IF EXISTS university;
+CREATE DATABASE university;
+SHOW DATABASES;
+USE university;
+
+CREATE TABLE students(sid int, name varchar(50), age int, gpa float, primary key(sid));
+
+CREATE TABLE courses (cid varchar(20), deptid varchar(20),name varchar(50), primary key(cid));
+
+CREATE TABLE professors(ssn int, name varchar(50), address varchar(50), 
+phone varchar(50), deptid varchar(20),primary key(ssn));
+
+CREATE TABLE teaches(cid varchar(20), section int, ssn int,  primary key(cid, section),
+foreign key (cid) references courses(cid),
+foreign key (ssn) references professors(ssn));
+
+CREATE TABLE enrollment(sid int, cid varchar(20),section int, grade varchar(2), primary key (sid, cid),
+foreign key (sid) references students(sid),
+foreign key (cid) references courses(cid),
+foreign key (cid,section) references teaches(cid, section));
+
+-- 2- Find the name of professors that work for the cs department.
+SELECT p.name
+FROM professors p
+WHERE  p.deptid = 'cs';
+
+-- 3- Find those students (sid) enrolled in courses in the cs department.
+SELECT s.sid
+FROM students s, enrollment e, courses c
+WHERE s.sid = e.sid AND e.cid = c.cid AND c.deptid = 'cs';
+
+-- 4- List ssn and name of professors that work for the cs department, but are not teaching any cs courses.
+SELECT p.ssn, p.name 
+FROM professors p
+WHERE p.deptid = 'cs' AND p.ssn NOT IN ( SELECT t.ssn FROM teaches t) 
+                      AND deptid in (SELECT c.deptid 
+					              FROM courses c
+			    	              WHERE deptid='cs');
+ 
+-- 5 List the number of courses offered by each department. Just the number of courses (not sections).
+SELECT c.deptid 'Department', count(*) 'Number of courses'
+FROM courses c
+GROUP BY c.deptid;
+
+-- 6. List of those departments that offer more than 10 courses.
+SELECT c.deptid 'Department'
+FROM courses c 
+GROUP BY c.deptid 
+HAVING COUNT(c.cid) > 0;
+
+-- 7 Produce a list of the name of those students whose professor’s name starts with an M. Your result must have no duplicates.
+
+SELECT DISTINCT s.sid, s.name 'Name of student'
+FROM students s
+		INNER JOIN enrollment e ON s.sid=e.sid
+		INNER JOIN teaches t ON e.cid=t.cid
+		INNER JOIN professors p ON p.ssn=t.ssn
+WHERE p.name LIKE 'M%';
+
+-- 8 Assume that small sections have less than 30 students, medium sections have at least 30
+-- students but less than 80, and large sections have at least 80 students.
+
+SELECT c.deptid, Count(e.sid) < 30 Small, Count(e.sid) >= 30 And Count(e.sid) < 80 Medium, Count(e.sid)>=80 Large
+FROM enrollment e, courses c 
+WHERE e.cid = c.cid 
+GROUP BY e.section, c.cid;
+
+-- 9 List of professors that work for departments with more than 20 faculty members and that offer
+--   more large sections than small and medium sections combined.
+
+SELECT DISTINCT p.name
+FROM professors p
+WHERE p.deptid IN ( SELECT p.deptid FROM professors p
+					GROUP BY p.deptid Having Count( p.ssn) > 20 )
+				And p.deptid IN (SELECT S.deptid
+								FROM (SELECT c.deptid, Count(e.sid) < 30 Small, 
+                                Count(e.sid) >= 30 And Count(e.sid) < 80 Medium, Count(e.sid) >= 80 Large
+										FROM enrollment e, courses c 
+										WHERE e.cid = c.cid 
+										GROUP BY e.section, c.cid) S
+								Where S.Large > (S.Small + S.Medium));
+
+-- 10 Assume grades are A, B, C, D, F where D and F are failing grades. For each course (section)
+-- find the percentage of students that failed the course.
+
+SELECT c.cid, (SELECT count(*)
+				FROM students s, enrollment e 
+				WHERE s.sid = e.sid and e.grade in ('D','F')) * 100 / 
+						(SELECT count(*) 
+						 FROM students s, enrollment e 
+						 WHERE s.sid = e.sid ) as 'Failed in percent'
+FROM enrollment e, courses c
+Where e.cid = c.cid
+Group By c.cid;
+
+-- 11 Find the name of the professor with the maximum percentage of students that failed his course.
+SELECT Max(FailedPer)
+FROM (SELECT p.name, ((SELECT Count( Distinct sid) FROM enrollment e WHERE e.grades = 'F' OR e.grades = 'D')*100
+							/Count(e.sid)) FailedPer
+FROM enrollment e INNER JOIN courses c ON e.cid = c.cid INNER JOIN professors p ON p.deptid = c.deptid
+WHERE e.grade = 'D' OR e.grade = 'F'
+GROUP BY c.deptid);
+
+-- 12 On average what percentage of students fail a course? (total number of students that failed a
+-- course / total number of enrolled students).
+SELECT s.name, (SELECT count(*)
+				FROM students s, enrollment e 
+				WHERE s.sid = e.sid AND e.grade = 'D' OR e.grade = 'F')*100/ 
+									(SELECT count(*) 
+									FROM students s, enrollment e 
+                                    WHERE s.sid = e.sid ) Average
+FROM students s;
+
+-- 13 Find a list of courses (sections) where the percentage of students with D or F is greater than
+-- average.
+SELECT e.cid,section
+FROM enrollment e, courses c 
+WHERE grade in('D','F') 
+GROUP BY section , e.cid
+HAVING count(grade) > (SELECT AVG(grade) 
+					 FROM enrollment);
+
+-- 14 Write a query that produces the following table:
+
+Create Temporary Table T14
+Select Distinct e.sid, c.deptid, e.section, 
+				If(e.grade IN ('A'), 1, 0) NumA,
+				If(e.grade IN ('B'), 1, 0) NumB,
+				If(e.grade IN ('C'), 1, 0) NumC,
+				If(e.grade IN ('D'), 1, 0) NumD,
+				If(e.grade IN ('F'), 1, 0) NumF
+From enrollment e, courses c;
+
+Select c.deptid,
+			SUM(T14.NumA)/(Select Count(s.sid)) as 'A%',
+			SUM(T14.NumB)/(Select Count(s.sid)) as 'B%',
+			SUM(T14.NumC)/(Select Count(s.sid)) as 'C%',
+			SUM(T14.NumD)/(Select Count(s.sid)) as 'D%',
+			SUM(T14.NumF)/(Select Count(s.sid)) as 'F%'
+From T14 inner join courses c On c.cid = e.cid, students s;
+
+
+
+
+
